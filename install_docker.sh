@@ -1,44 +1,25 @@
-#!/bin/bash
+#!/bin/bash set -e
 
-# 更新 APT 包索引
-apt update
+检测系统类型
 
-# 移除旧版本的 Docker 和 Docker Compose（如果有）
-apt remove docker docker-engine docker.io containerd runc docker-compose -y
+if [[ -f /etc/os-release ]]; then . /etc/os-release OS=$ID VERSION_ID=$VERSION_ID else echo "无法检测操作系统类型，脚本退出。" exit 1 fi
 
-# 安装必要的依赖项
-apt install apt-transport-https ca-certificates curl gnupg lsb-release -y
+echo "检测到系统: $OS $VERSION_ID"
 
-# 如果文件存在，则删除它
-[ -f /usr/share/keyrings/docker-archive-keyring.gpg ] && sudo rm /usr/share/keyrings/docker-archive-keyring.gpg
+检查 Docker 是否已安装
 
-# 添加 Docker 官方 GPG 密钥
-curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+if command -v docker &> /dev/null; then echo "检测到已安装 Docker，正在卸载..." case "$OS" in debian|ubuntu) apt remove -y docker-ce docker-ce-cli containerd.io ;; centos|rhel) yum remove -y docker-ce docker-ce-cli containerd.io ;; arch) pacman -Rns --noconfirm docker ;; esac echo "Docker 卸载完成。" fi
 
-# 设置 Docker 仓库
-echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+安装 Docker
 
-# 更新 APT 包索引
-apt update
+install_docker() { echo "正在安装 Docker..." case "$OS" in debian|ubuntu) apt update && apt install -y ca-certificates curl gnupg install -m 0755 -d /etc/apt/keyrings curl -fsSL https://download.docker.com/linux/$OS/gpg | tee /etc/apt/keyrings/docker.asc > /dev/null chmod a+r /etc/apt/keyrings/docker.asc echo "deb [signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/$OS $VERSION_CODENAME stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null apt update && apt install -y docker-ce docker-ce-cli containerd.io ;; centos|rhel) yum install -y yum-utils yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo yum install -y docker-ce docker-ce-cli containerd.io systemctl enable --now docker ;; arch) pacman -Sy --noconfirm docker systemctl enable --now docker ;; *) echo "不支持的操作系统: $OS" exit 1 ;; esac echo "Docker 安装完成！" }
 
-# 安装最新版 Docker
-apt install docker-ce docker-ce-cli containerd.io -y
+安装 Docker Compose
 
-# 下载最新版本的 Docker Compose
-curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+install_docker_compose() { echo "正在安装 Docker Compose..." LATEST_COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep '"tag_name"' | cut -d '"' -f 4) curl -L "https://github.com/docker/compose/releases/download/$LATEST_COMPOSE_VERSION/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose chmod +x /usr/local/bin/docker-compose echo "Docker Compose 安装完成！" }
 
-# 赋予执行权限
-chmod +x /usr/local/bin/docker-compose
+执行安装
 
-# 创建软链接（如果需要）
-ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
+install_docker install_docker_compose
 
-# 启动并启用 Docker 服务
-systemctl start docker
-systemctl enable docker
-
-# 显示安装的版本
-docker --version
-docker-compose --version
-
-echo "Docker 和 Docker Compose 已成功安装！"
+echo "所有安装完成！"
