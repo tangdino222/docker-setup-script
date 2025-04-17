@@ -10,37 +10,38 @@ NC='\033[0m' # No Color
 
 # 修复语言环境设置
 fix_locale() {
-    echo -e "${YELLOW}正在修复语言环境设置...${NC}"
+    echo -e "${YELLOW}正在彻底修复语言环境问题...${NC}"
     
-    # 安装必要的语言包
-    if command -v apt-get &> /dev/null; then
-        sudo apt-get update -y
-        sudo apt-get install -y locales
-        
-        # 检测是否是Debian系统
-        if grep -qi "debian" /etc/os-release; then
-            echo -e "${YELLOW}检测到Debian系统，使用Debian特有方式设置语言环境${NC}"
-            sudo sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen
-            sudo sed -i '/zh_CN.UTF-8/s/^# //g' /etc/locale.gen
-            sudo locale-gen
-        else
-            # 尝试安装Ubuntu的语言包（忽略错误）
-            sudo apt-get install -y language-pack-en 2>/dev/null || true
-        fi
-    elif command -v yum &> /dev/null; then
-        sudo yum install -y glibc-common
+    # 确保locales包已安装
+    sudo apt-get update -y
+    sudo apt-get install -y locales
+    
+    # 处理Debian/Ubuntu差异
+    if grep -qi "debian" /etc/os-release; then
+        echo -e "${YELLOW}Debian系统: 手动生成语言环境${NC}"
+        sudo sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen
+        sudo sed -i '/zh_CN.UTF-8/s/^# //g' /etc/locale.gen
     fi
-
-    # 更新系统默认语言环境
+    
+    # 强制重新生成
+    echo -e "${YELLOW}正在生成语言环境文件...${NC}"
+    sudo locale-gen en_US.UTF-8
+    sudo locale-gen zh_CN.UTF-8
+    
+    # 系统级设置
+    echo -e "${YELLOW}更新系统默认设置...${NC}"
     sudo update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
     
-    # 设置当前会话语言环境
-    export LANG=en_US.UTF-8
-    export LC_ALL=en_US.UTF-8
+    # 会话级设置
+    export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
     
-    echo -e "${GREEN}语言环境修复完成！${NC}"
-    echo -e "${BLUE}当前语言环境设置：${NC}"
-    locale
+    # 验证结果
+    echo -e "${GREEN}修复完成！验证结果：${NC}"
+    if locale | grep -q "en_US.UTF-8"; then
+        echo -e "${GREEN}✓ 语言环境设置成功${NC}"
+    else
+        echo -e "${RED}✗ 仍有问题，尝试手动执行：sudo dpkg-reconfigure locales${NC}"
+    fi
 }
 
 # 系统检测
