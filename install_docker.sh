@@ -8,42 +8,6 @@ YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# 修复语言环境设置
-fix_locale() {
-    echo -e "${YELLOW}执行深度语言环境修复...${NC}"
-    
-    # 确保基础包就位
-    sudo apt-get update -y
-    sudo apt-get install --reinstall -y locales
-    
-    # 处理Debian系发行版
-    if grep -qi "debian" /etc/os-release; then
-        echo -e "${YELLOW}配置Debian语言环境...${NC}"
-        sudo sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen
-        sudo sed -i '/zh_CN.UTF-8/s/^# //g' /etc/locale.gen
-        
-        # 深度清理重建
-        sudo rm -f /usr/lib/locale/locale-archive
-        sudo locale-gen --purge en_US.UTF-8
-        sudo locale-gen --purge zh_CN.UTF-8
-        sudo dpkg-reconfigure --frontend=noninteractive locales
-    fi
-    
-    # 系统级设置
-    sudo update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
-    
-    # 验证修复
-    echo -e "${GREEN}修复完成，验证结果：${NC}"
-    if locale -a | grep -q "en_US.utf8"; then
-        echo -e "${GREEN}✓ 语言环境数据已生成${NC}"
-        export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
-        locale
-    else
-        echo -e "${RED}✗ 修复失败，请尝试手动执行：${NC}"
-        echo "sudo dpkg-reconfigure locales"
-        echo "sudo apt-get install --reinstall locales"
-    fi
-}
 
 # 系统检测
 detect_system() {
@@ -109,7 +73,6 @@ show_menu() {
     echo -e "3) 安装 Portainer (Web管理界面)"
     echo -e "4) 安装 Watchtower (自动更新容器)"
     echo -e "5) 系统清理"
-    echo -e "6) 修复语言环境问题"
     echo -e "0) 退出${NC}"
     read -p "请输入选择: " choice
 }
@@ -260,9 +223,6 @@ while true; do
             ;;
         5)
             system_cleanup
-            ;;
-        6)
-            fix_locale
             ;;
         0)
             echo -e "${GREEN}退出脚本...${NC}"
