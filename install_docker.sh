@@ -197,8 +197,6 @@ uninstall_docker() {
     echo -e "${GREEN}Docker 已完全卸载!${NC}"
 }
 
-# 主执行流程
-fix_locale
 detect_system
 
 if is_china_ip; then
