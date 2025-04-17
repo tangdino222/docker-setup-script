@@ -17,12 +17,14 @@ fix_locale() {
         sudo apt-get update -y
         sudo apt-get install -y locales
         
-        # Debian 和 Ubuntu 处理方式不同
-        if grep -q "Debian" /etc/os-release; then
+        # 检测是否是Debian系统
+        if grep -qi "debian" /etc/os-release; then
+            echo -e "${YELLOW}检测到Debian系统，使用Debian特有方式设置语言环境${NC}"
             sudo sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen
             sudo sed -i '/zh_CN.UTF-8/s/^# //g' /etc/locale.gen
             sudo locale-gen
         else
+            # 尝试安装Ubuntu的语言包（忽略错误）
             sudo apt-get install -y language-pack-en 2>/dev/null || true
         fi
     elif command -v yum &> /dev/null; then
@@ -37,6 +39,7 @@ fix_locale() {
     export LC_ALL=en_US.UTF-8
     
     echo -e "${GREEN}语言环境修复完成！${NC}"
+    echo -e "${BLUE}当前语言环境设置：${NC}"
     locale
 }
 
