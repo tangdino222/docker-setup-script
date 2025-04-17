@@ -7,6 +7,19 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
+# 修复 locale 警告
+fix_locale() {
+    # 检查并生成 en_US.UTF-8 语言环境
+    if ! locale -a | grep -q "en_US.UTF-8"; then
+        echo -e "${YELLOW}检测到缺少 en_US.UTF-8 语言环境，正在生成...${NC}"
+        sudo locale-gen en_US.UTF-8
+        sudo update-locale LANG=en_US.UTF-8
+    fi
+}
+
+# 调用修复 locale 的函数
+fix_locale
+
 # 检测系统类型
 if [[ -f /etc/os-release ]]; then
     . /etc/os-release
