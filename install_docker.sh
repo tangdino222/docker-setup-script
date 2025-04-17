@@ -1,39 +1,66 @@
 #!/bin/bash
 set -e
 
-# Color definitions
+# 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# System detection
+# 修复语言环境设置
+fix_locale() {
+    echo -e "${YELLOW}正在修复语言环境设置...${NC}"
+    
+    # 安装必要的语言包
+    if command -v apt-get &> /dev/null; then
+        sudo apt-get update -y
+        sudo apt-get install -y locales language-pack-en
+    elif command -v yum &> /dev/null; then
+        sudo yum install -y glibc-common
+    fi
+
+    # 生成常用语言环境
+    sudo locale-gen en_US.UTF-8
+    sudo locale-gen zh_CN.UTF-8
+    
+    # 更新系统默认语言环境
+    sudo update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
+    
+    # 设置当前会话语言环境
+    export LANG=en_US.UTF-8
+    export LC_ALL=en_US.UTF-8
+    
+    echo -e "${GREEN}语言环境修复完成！${NC}"
+    locale
+}
+
+# 系统检测
 detect_system() {
     if [[ -f /etc/os-release ]]; then
         . /etc/os-release
         OS=$ID
         VERSION_ID=$VERSION_ID
         VERSION_CODENAME=${VERSION_CODENAME:-$(. /etc/os-release && echo "$VERSION_CODENAME")}
-        echo -e "${GREEN}Detected system: ${BLUE}$OS $VERSION_ID${NC}"
+        echo -e "${GREEN}检测到系统: ${BLUE}$OS $VERSION_ID${NC}"
     else
-        echo -e "${RED}Cannot detect OS type. Exiting.${NC}"
+        echo -e "${RED}无法检测操作系统类型，脚本退出。${NC}"
         exit 1
     fi
 }
 
-# Check China IP
+# 检测中国大陆IP
 is_china_ip() {
     local country
     country=$(curl -s --max-time 5 https://ipapi.co/country_code/ || echo "XX")
     [[ "$country" == "CN" ]]
 }
 
-# Setup China mirrors
+# 设置国内镜像源
 setup_cn_mirrors() {
-    echo -e "${YELLOW}Using China mainland IP, setting up mirrors...${NC}"
+    echo -e "${YELLOW}检测到中国大陆IP，启用国内加速源...${NC}"
     
-    # Docker mirror
+    # Docker镜像设置
     mkdir -p /etc/docker
     cat > /etc/docker/daemon.json <<EOF
 {
@@ -47,15 +74,15 @@ setup_cn_mirrors() {
 }
 EOF
 
-    # APT/YUM mirrors for China
+    # 系统包管理器镜像
     case "$OS" in
         debian|ubuntu)
-            sed -i 's|http://.*archive.ubuntu.com|https://mirrors.aliyun.com|g' /etc/apt/sources.list
-            sed -i 's|http://.*security.ubuntu.com|https://mirrors.aliyun.com|g' /etc/apt/sources.list
+            sudo sed -i 's|http://.*archive.ubuntu.com|https://mirrors.aliyun.com|g' /etc/apt/sources.list
+            sudo sed -i 's|http://.*security.ubuntu.com|https://mirrors.aliyun.com|g' /etc/apt/sources.list
             ;;
         centos|rhel)
-            sed -i 's|^mirrorlist=|#mirrorlist=|g' /etc/yum.repos.d/*
-            sed -i 's|^#baseurl=http://mirror.centos.org|baseurl=https://mirrors.aliyun.com|g' /etc/yum.repos.d/*
+            sudo sed -i 's|^mirrorlist=|#mirrorlist=|g' /etc/yum.repos.d/*
+            sudo sed -i 's|^#baseurl=http://mirror.centos.org|baseurl=https://mirrors.aliyun.com|g' /etc/yum.repos.d/*
             ;;
     esac
     
@@ -63,61 +90,62 @@ EOF
     systemctl restart docker || true
 }
 
-# Main menu
+# 主菜单
 show_menu() {
     clear
-    echo -e "\n${BLUE}==== Docker Management Script ====${NC}"
-    echo -e "${GREEN}1) Install/Update Docker & Docker Compose"
-    echo -e "2) Uninstall Docker & Docker Compose"
-    echo -e "3) Install Portainer (Web UI)"
-    echo -e "4) Install Watchtower (Auto-updater)"
-    echo -e "5) System Cleanup"
-    echo -e "0) Exit${NC}"
-    read -p "Enter your choice: " choice
+    echo -e "\n${BLUE}==== Docker 管理脚本 ====${NC}"
+    echo -e "${GREEN}1) 安装/更新 Docker & Docker Compose"
+    echo -e "2) 卸载 Docker & Docker Compose"
+    echo -e "3) 安装 Portainer (Web管理界面)"
+    echo -e "4) 安装 Watchtower (自动更新容器)"
+    echo -e "5) 系统清理"
+    echo -e "6) 修复语言环境问题"
+    echo -e "0) 退出${NC}"
+    read -p "请输入选择: " choice
 }
 
-# Docker installation
+# Docker安装
 install_docker() {
-    echo -e "\n${BLUE}=== Installing Docker ===${NC}"
+    echo -e "\n${BLUE}=== 安装 Docker ===${NC}"
     
     case "$OS" in
         debian|ubuntu)
-            apt update && apt install -y apt-transport-https ca-certificates curl gnupg lsb-release
-            install -m 0755 -d /etc/apt/keyrings
-            curl -fsSL https://download.docker.com/linux/$OS/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$OS $VERSION_CODENAME stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-            apt update && apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+            sudo apt update && sudo apt install -y apt-transport-https ca-certificates curl gnupg lsb-release
+            sudo install -m 0755 -d /etc/apt/keyrings
+            curl -fsSL https://download.docker.com/linux/$OS/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$OS $VERSION_CODENAME stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+            sudo apt update && sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
             ;;
         centos|rhel)
-            yum install -y yum-utils device-mapper-persistent-data lvm2
-            yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-            yum install -y docker-ce docker-ce-cli containerd.io
+            sudo yum install -y yum-utils device-mapper-persistent-data lvm2
+            sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+            sudo yum install -y docker-ce docker-ce-cli containerd.io
             ;;
         arch)
-            pacman -Sy --noconfirm docker
+            sudo pacman -Sy --noconfirm docker
             ;;
     esac
     
-    systemctl enable --now docker
-    usermod -aG docker $USER || true
-    echo -e "${GREEN}Docker installed successfully!${NC}"
+    sudo systemctl enable --now docker
+    sudo usermod -aG docker $USER || true
+    echo -e "${GREEN}Docker 安装成功!${NC}"
 }
 
-# Docker Compose installation
+# Docker Compose安装
 install_compose() {
-    echo -e "\n${BLUE}=== Installing Docker Compose ===${NC}"
+    echo -e "\n${BLUE}=== 安装 Docker Compose ===${NC}"
     
     COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep '"tag_name"' | cut -d '"' -f 4)
-    curl -L "https://github.com/docker/compose/releases/download/$COMPOSE_VERSION/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    chmod +x /usr/local/bin/docker-compose
+    sudo curl -L "https://github.com/docker/compose/releases/download/$COMPOSE_VERSION/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    sudo chmod +x /usr/local/bin/docker-compose
     
-    echo -e "${GREEN}Docker Compose installed successfully!${NC}"
+    echo -e "${GREEN}Docker Compose 安装成功!${NC}"
     docker-compose --version
 }
 
-# Portainer installation
+# Portainer安装
 install_portainer() {
-    echo -e "\n${BLUE}=== Installing Portainer ===${NC}"
+    echo -e "\n${BLUE}=== 安装 Portainer ===${NC}"
     
     docker volume create portainer_data
     docker run -d \
@@ -129,13 +157,13 @@ install_portainer() {
         -v portainer_data:/data \
         portainer/portainer-ce:latest
     
-    echo -e "${GREEN}Portainer installed successfully!${NC}"
-    echo -e "Access at: ${YELLOW}https://localhost:9443${NC}"
+    echo -e "${GREEN}Portainer 安装成功!${NC}"
+    echo -e "访问地址: ${YELLOW}https://localhost:9443${NC}"
 }
 
-# Watchtower installation
+# Watchtower安装
 install_watchtower() {
-    echo -e "\n${BLUE}=== Installing Watchtower ===${NC}"
+    echo -e "\n${BLUE}=== 安装 Watchtower ===${NC}"
     
     docker run -d \
         --name watchtower \
@@ -146,13 +174,13 @@ install_watchtower() {
         --schedule "0 0 4 * * *" \
         --label-enable
     
-    echo -e "${GREEN}Watchtower installed successfully!${NC}"
-    echo -e "Will check for updates daily at 4 AM"
+    echo -e "${GREEN}Watchtower 安装成功!${NC}"
+    echo -e "将每天凌晨4点检查更新"
 }
 
-# Cleanup function
+# 系统清理
 system_cleanup() {
-    echo -e "\n${BLUE}=== System Cleanup ===${NC}"
+    echo -e "\n${BLUE}=== 系统清理 ===${NC}"
     
     docker system prune -af
     docker volume prune -f
@@ -160,44 +188,46 @@ system_cleanup() {
     
     case "$OS" in
         debian|ubuntu)
-            apt autoremove -y
-            apt clean
+            sudo apt autoremove -y
+            sudo apt clean
             ;;
         centos|rhel)
-            yum autoremove -y
-            yum clean all
+            sudo yum autoremove -y
+            sudo yum clean all
             ;;
     esac
     
-    echo -e "${GREEN}Cleanup completed!${NC}"
+    echo -e "${GREEN}清理完成!${NC}"
 }
 
-# Uninstall function
+# 卸载Docker
 uninstall_docker() {
-    echo -e "\n${RED}=== Uninstalling Docker ===${NC}"
+    echo -e "\n${RED}=== 卸载 Docker ===${NC}"
     
     case "$OS" in
         debian|ubuntu)
-            apt purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-            rm -rf /etc/apt/keyrings/docker.gpg
-            rm -rf /etc/apt/sources.list.d/docker.list
+            sudo apt purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+            sudo rm -rf /etc/apt/keyrings/docker.gpg
+            sudo rm -rf /etc/apt/sources.list.d/docker.list
             ;;
         centos|rhel)
-            yum remove -y docker-ce docker-ce-cli containerd.io
-            rm -rf /etc/yum.repos.d/docker-ce.repo
+            sudo yum remove -y docker-ce docker-ce-cli containerd.io
+            sudo rm -rf /etc/yum.repos.d/docker-ce.repo
             ;;
         arch)
-            pacman -R --noconfirm docker
+            sudo pacman -R --noconfirm docker
             ;;
     esac
     
-    rm -f /usr/local/bin/docker-compose
-    rm -rf /var/lib/docker
-    echo -e "${GREEN}Docker has been completely removed!${NC}"
+    sudo rm -f /usr/local/bin/docker-compose
+    sudo rm -rf /var/lib/docker
+    echo -e "${GREEN}Docker 已完全卸载!${NC}"
 }
 
-# Main execution
+# 主执行流程
+fix_locale
 detect_system
+
 if is_china_ip; then
     setup_cn_mirrors
 fi
@@ -221,14 +251,17 @@ while true; do
         5)
             system_cleanup
             ;;
+        6)
+            fix_locale
+            ;;
         0)
-            echo -e "${GREEN}Exiting...${NC}"
+            echo -e "${GREEN}退出脚本...${NC}"
             exit 0
             ;;
         *)
-            echo -e "${RED}Invalid choice!${NC}"
+            echo -e "${RED}无效选择!${NC}"
             ;;
     esac
     
-    read -p "Press Enter to continue..."
+    read -p "按Enter键继续..."
 done
