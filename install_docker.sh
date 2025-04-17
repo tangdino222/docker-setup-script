@@ -10,37 +10,38 @@ NC='\033[0m' # No Color
 
 # 修复语言环境设置
 fix_locale() {
-    echo -e "${YELLOW}正在彻底修复语言环境问题...${NC}"
+    echo -e "${YELLOW}执行深度语言环境修复...${NC}"
     
-    # 确保locales包已安装
+    # 确保基础包就位
     sudo apt-get update -y
-    sudo apt-get install -y locales
+    sudo apt-get install --reinstall -y locales
     
-    # 处理Debian/Ubuntu差异
+    # 处理Debian系发行版
     if grep -qi "debian" /etc/os-release; then
-        echo -e "${YELLOW}Debian系统: 手动生成语言环境${NC}"
+        echo -e "${YELLOW}配置Debian语言环境...${NC}"
         sudo sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen
         sudo sed -i '/zh_CN.UTF-8/s/^# //g' /etc/locale.gen
+        
+        # 深度清理重建
+        sudo rm -f /usr/lib/locale/locale-archive
+        sudo locale-gen --purge en_US.UTF-8
+        sudo locale-gen --purge zh_CN.UTF-8
+        sudo dpkg-reconfigure --frontend=noninteractive locales
     fi
     
-    # 强制重新生成
-    echo -e "${YELLOW}正在生成语言环境文件...${NC}"
-    sudo locale-gen en_US.UTF-8
-    sudo locale-gen zh_CN.UTF-8
-    
     # 系统级设置
-    echo -e "${YELLOW}更新系统默认设置...${NC}"
     sudo update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
     
-    # 会话级设置
-    export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
-    
-    # 验证结果
-    echo -e "${GREEN}修复完成！验证结果：${NC}"
-    if locale | grep -q "en_US.UTF-8"; then
-        echo -e "${GREEN}✓ 语言环境设置成功${NC}"
+    # 验证修复
+    echo -e "${GREEN}修复完成，验证结果：${NC}"
+    if locale -a | grep -q "en_US.utf8"; then
+        echo -e "${GREEN}✓ 语言环境数据已生成${NC}"
+        export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
+        locale
     else
-        echo -e "${RED}✗ 仍有问题，尝试手动执行：sudo dpkg-reconfigure locales${NC}"
+        echo -e "${RED}✗ 修复失败，请尝试手动执行：${NC}"
+        echo "sudo dpkg-reconfigure locales"
+        echo "sudo apt-get install --reinstall locales"
     fi
 }
 
