@@ -15,15 +15,20 @@ fix_locale() {
     # 安装必要的语言包
     if command -v apt-get &> /dev/null; then
         sudo apt-get update -y
-        sudo apt-get install -y locales language-pack-en
+        sudo apt-get install -y locales
+        
+        # Debian 和 Ubuntu 处理方式不同
+        if grep -q "Debian" /etc/os-release; then
+            sudo sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen
+            sudo sed -i '/zh_CN.UTF-8/s/^# //g' /etc/locale.gen
+            sudo locale-gen
+        else
+            sudo apt-get install -y language-pack-en 2>/dev/null || true
+        fi
     elif command -v yum &> /dev/null; then
         sudo yum install -y glibc-common
     fi
 
-    # 生成常用语言环境
-    sudo locale-gen en_US.UTF-8
-    sudo locale-gen zh_CN.UTF-8
-    
     # 更新系统默认语言环境
     sudo update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
     
