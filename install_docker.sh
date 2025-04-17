@@ -1,84 +1,63 @@
 #!/bin/bash
 set -e
-export LANG=C.UTF-8
 
-# 彩色输出
+# 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
-# 检查 root 权限
-if [[ "$EUID" -ne 0 ]]; then
-    echo -e "${RED}请使用 root 权限运行此脚本。${NC}"
-    exit 1
-fi
-
-# 初始化
-IS_CHINA_IP=false
-API_PROXY=""
-
-# 检测 IP 是否来自中国大陆
-detect_ip_location() {
-    echo -e "${YELLOW}正在检测当前 IP 归属地...${NC}"
-    local country=$(curl -s https://ipinfo.io/json | grep '"country"' | cut -d '"' -f 4)
-    if [[ "$country" == "CN" ]]; then
-        IS_CHINA_IP=true
-        API_PROXY="https://ghproxy.com/"
-        echo -e "${GREEN}检测到为中国大陆 IP，将使用国内镜像与加速。${NC}"
-    else
-        IS_CHINA_IP=false
-        API_PROXY=""
-        echo -e "${YELLOW}检测到为非中国 IP，使用官方源。${NC}"
-    fi
-}
-
-# 检测系统
+# 检测系统类型
 if [[ -f /etc/os-release ]]; then
     . /etc/os-release
     OS=$ID
     VERSION_ID=$VERSION_ID
-    VERSION_CODENAME=${VERSION_CODENAME:-$(grep VERSION_CODENAME /etc/os-release | cut -d= -f2 | tr -d \")}
+    VERSION_CODENAME=${VERSION_CODENAME:-$(. /etc/os-release && echo "$VERSION_CODENAME")}
 else
-    echo -e "${RED}无法检测系统信息，退出。${NC}"
+    echo -e "${RED}无法检测操作系统类型，脚本退出。${NC}"
     exit 1
 fi
 
 echo -e "${GREEN}检测到系统: $OS $VERSION_ID${NC}"
-detect_ip_location
 
-# 菜单
+# 检测是否是中国大陆IP
+is_china_ip() {
+    IP=$(curl -s --max-time 5 https://ipinfo.io/ip)
+    COUNTRY=$(curl -s --max-time 5 https://ipapi.co/${IP}/country_code 2>/dev/null || echo "XX")
+    [[ "$COUNTRY" == "CN" ]]
+}
+
+# 使用国内镜像
+setup_cn_mirrors() {
+    echo -e "${YELLOW}检测到中国大陆IP，启用国内加速源...${NC}"
+    mkdir -p /etc/docker
+    cat > /etc/docker/daemon.json <<EOF
+{
+  "registry-mirrors": ["https://registry.cn-hangzhou.aliyuncs.com"]
+}
+EOF
+    systemctl daemon-reexec || true
+    systemctl restart docker || true
+}
+
+# 显示菜单
 show_menu() {
     echo -e "\n${YELLOW}请选择操作:${NC}"
     echo "1) 安装/升级 Docker、Docker Compose、Watchtower"
-    echo "2) 卸载 Docker、Docker Compose、Watchtower"
+    echo "2) 卸载 Docker、Docker Compose"
+    echo "3) 安装 Portainer 管理面板"
     echo "0) 退出脚本"
     read -p "请输入数字选择: " choice
 }
 
-# 检查工具
+# 检查 Docker 是否已安装
 check_docker_installed() {
-    command -v docker &> /dev/null
-}
-check_docker_compose_installed() {
-    command -v docker-compose &> /dev/null
-}
-check_watchtower_installed() {
-    docker ps -a --format '{{.Names}}' | grep -q '^watchtower$'
+    command -v docker &>/dev/null
 }
 
-# 启用国内 Docker 镜像
-enable_china_mirror() {
-    echo -e "${YELLOW}配置阿里云 Docker 镜像加速...${NC}"
-    mkdir -p /etc/docker
-    cat > /etc/docker/daemon.json <<EOF
-{
-  "registry-mirrors": ["https://registry.docker-cn.com", "https://mirror.aliyuncs.com"]
-}
-EOF
-    systemctl daemon-reexec
-    systemctl restart docker
-    echo -e "${GREEN}镜像加速已启用${NC}"
+# 检查 Docker Compose 是否已安装
+check_docker_compose_installed() {
+    command -v docker-compose &>/dev/null
 }
 
 # 安装 Docker
@@ -88,30 +67,26 @@ install_docker() {
         debian|ubuntu)
             apt update && apt install -y ca-certificates curl gnupg lsb-release
             install -m 0755 -d /etc/apt/keyrings
-            curl -fsSL https://download.docker.com/linux/$OS/gpg | tee /etc/apt/keyrings/docker.asc > /dev/null
-            chmod a+r /etc/apt/keyrings/docker.asc
-            echo "deb [signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/$OS $VERSION_CODENAME stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-            apt update && apt install -y docker-ce docker-ce-cli containerd.io
-            systemctl enable --now docker
-            $IS_CHINA_IP && enable_china_mirror
+            curl -fsSL https://download.docker.com/linux/$OS/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+            echo \
+              "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$OS \
+              $VERSION_CODENAME stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+            apt update && apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
             ;;
         centos|rhel)
             yum install -y yum-utils
             yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
             yum install -y docker-ce docker-ce-cli containerd.io
-            systemctl enable --now docker
-            $IS_CHINA_IP && enable_china_mirror
             ;;
         arch)
             pacman -Sy --noconfirm docker
-            systemctl enable --now docker
-            $IS_CHINA_IP && enable_china_mirror
             ;;
         *)
-            echo -e "${RED}暂不支持此系统: $OS${NC}"
+            echo -e "${RED}不支持的操作系统: $OS${NC}"
             exit 1
             ;;
     esac
+    systemctl enable --now docker
     echo -e "${GREEN}Docker 安装完成！${NC}"
 }
 
@@ -120,89 +95,92 @@ uninstall_docker() {
     echo -e "\n${RED}正在卸载 Docker...${NC}"
     case "$OS" in
         debian|ubuntu)
-            apt purge -y docker-ce docker-ce-cli containerd.io
-            rm -rf /etc/apt/keyrings/docker.asc /etc/apt/sources.list.d/docker.list /etc/docker
+            apt purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+            rm -rf /etc/apt/keyrings/docker.gpg
+            rm -rf /etc/apt/sources.list.d/docker.list
             ;;
         centos|rhel)
             yum remove -y docker-ce docker-ce-cli containerd.io
-            rm -rf /etc/yum.repos.d/docker-ce.repo /etc/docker
+            rm -rf /etc/yum.repos.d/docker-ce.repo
             ;;
         arch)
             pacman -R --noconfirm docker
-            rm -rf /etc/docker
             ;;
     esac
-    echo -e "${GREEN}Docker 已卸载${NC}"
+    echo -e "${GREEN}Docker 已卸载！${NC}"
 }
 
-# 安装 Docker Compose
+# 安装 Docker Compose（独立版本）
 install_docker_compose() {
     echo -e "\n${GREEN}正在安装 Docker Compose...${NC}"
-    LATEST=$(curl -s ${API_PROXY}https://api.github.com/repos/docker/compose/releases/latest | grep '"tag_name"' | cut -d '"' -f 4)
-    CURRENT=$(docker-compose version --short 2>/dev/null || echo "")
-
-    if [[ "$CURRENT" == "$LATEST" ]]; then
-        echo -e "${GREEN}Docker Compose 已是最新版：$CURRENT${NC}"
-        return
-    fi
-
-    echo -e "${YELLOW}正在安装版本: $LATEST ...${NC}"
-    curl -L "${API_PROXY}https://github.com/docker/compose/releases/download/${LATEST}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    LATEST_COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep '"tag_name"' | cut -d '"' -f 4)
+    curl -L "https://github.com/docker/compose/releases/download/${LATEST_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
     chmod +x /usr/local/bin/docker-compose
-    ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
     echo -e "${GREEN}Docker Compose 安装完成！${NC}"
 }
 
-# 卸载 Compose
+# 卸载 Docker Compose
 uninstall_docker_compose() {
     echo -e "\n${RED}正在卸载 Docker Compose...${NC}"
-    rm -f /usr/local/bin/docker-compose /usr/bin/docker-compose
-    echo -e "${GREEN}Docker Compose 已卸载${NC}"
+    rm -f /usr/local/bin/docker-compose
+    echo -e "${GREEN}Docker Compose 已卸载！${NC}"
 }
 
 # 安装 Watchtower
 install_watchtower() {
-    if check_watchtower_installed; then
-        echo -e "${GREEN}Watchtower 已部署${NC}"
-        return
-    fi
     echo -e "${GREEN}正在安装 Watchtower...${NC}"
     docker run -d \
-        --name watchtower \
+      --name watchtower \
+      --restart always \
+      -v /var/run/docker.sock:/var/run/docker.sock \
+      containrrr/watchtower \
+      --cleanup \
+      --interval 3600
+    echo -e "${GREEN}Watchtower 已启动，每小时检查一次更新。${NC}"
+}
+
+# 安装 Portainer
+install_portainer() {
+    echo -e "${GREEN}正在安装 Portainer 管理面板...${NC}"
+    docker volume create portainer_data
+    docker run -d \
+        -p 9000:9000 \
+        -p 9443:9443 \
+        --name portainer \
         --restart always \
         -v /var/run/docker.sock:/var/run/docker.sock \
-        containrrr/watchtower \
-        --cleanup --interval 86400
-    echo -e "${GREEN}Watchtower 部署完成！（每天自动检查更新）${NC}"
+        -v portainer_data:/data \
+        portainer/portainer-ce:latest
+    echo -e "${GREEN}Portainer 安装完成！请访问 http://<你的IP>:9000 设置管理员账户并切换中文。${NC}"
 }
 
-# 卸载 Watchtower
-uninstall_watchtower() {
-    echo -e "${RED}正在卸载 Watchtower...${NC}"
-    docker rm -f watchtower 2>/dev/null || true
-    echo -e "${GREEN}Watchtower 已卸载${NC}"
-}
+# 主逻辑
+if is_china_ip; then
+    setup_cn_mirrors
+fi
 
-# 主流程
 while true; do
     show_menu
     case $choice in
         1)
             check_docker_installed || install_docker
-            install_docker_compose
+            check_docker_compose_installed || install_docker_compose
             install_watchtower
             ;;
         2)
-            check_docker_installed && uninstall_docker || echo -e "${YELLOW}Docker 未安装${NC}"
-            check_docker_compose_installed && uninstall_docker_compose || echo -e "${YELLOW}Docker Compose 未安装${NC}"
-            check_watchtower_installed && uninstall_watchtower || echo -e "${YELLOW}Watchtower 未部署${NC}"
+            check_docker_installed && uninstall_docker || echo -e "${YELLOW}Docker 未安装，无需卸载${NC}"
+            check_docker_compose_installed && uninstall_docker_compose || echo -e "${YELLOW}Docker Compose 未安装，无需卸载${NC}"
+            ;;
+        3)
+            check_docker_installed || install_docker
+            install_portainer
             ;;
         0)
-            echo -e "${GREEN}已退出${NC}"
+            echo -e "${GREEN}已退出脚本${NC}"
             exit 0
             ;;
         *)
-            echo -e "${RED}无效选项，请重试${NC}"
+            echo -e "${RED}无效选择，请重新输入！${NC}"
             ;;
     esac
 done
