@@ -98,10 +98,17 @@ install_docker() {
             sudo pacman -Sy --noconfirm docker
             ;;
     esac
-    
+
     sudo systemctl enable --now docker
     sudo usermod -aG docker $USER || true
     echo -e "${GREEN}Docker 安装成功!${NC}"
+
+    # 自动安装 Watchtower（仅在未安装时）
+    if docker ps -a --format '{{.Names}}' | grep -q '^watchtower$'; then
+        echo -e "${YELLOW}Watchtower 已存在，跳过安装。${NC}"
+    else
+        install_watchtower
+    fi
 }
 
 # Docker Compose安装
